@@ -1,0 +1,12 @@
+node_modules
+.env
+*.log
+*.bat
+test-*.js
+check-*.js
+create-*.js
+update-*.js
+reset-*.js
+seed.js
+setup-*.js
+

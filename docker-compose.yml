@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Backend Service
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: weddinggift-backend
+    ports:
+      - "5000:5000"
+    environment:
+      # Base de datos PostgreSQL
+      - DATABASE_URL=${DATABASE_URL}
+      - POSTGRES_URL=${POSTGRES_URL}
+      - POSTGRES_PRISMA_URL=${POSTGRES_PRISMA_URL}
+      
+      # Configuración del servidor
+      - PORT=5000
+      - NODE_ENV=${NODE_ENV:-development}
+      
+      # JWT Secret
+      - JWT_SECRET=${JWT_SECRET}
+      
+      # CORS - URL del frontend
+      - FRONTEND_URL=${FRONTEND_URL:-http://localhost:3000}
+      
+      # Vercel (si se usa)
+      - VERCEL=${VERCEL:-0}
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+    networks:
+      - weddinggift-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend Service
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: weddinggift-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      # URL del API Backend
+      - REACT_APP_API_URL=${REACT_APP_API_URL:-http://localhost:5000/api}
+      
+      # Node Environment
+      - NODE_ENV=${NODE_ENV:-development}
+      
+      # Build args
+      - REACT_APP_ENV=${REACT_APP_ENV:-development}
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    networks:
+      - weddinggift-network
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+networks:
+  weddinggift-network:
+    driver: bridge
+
+volumes:
+  backend_node_modules:
+  frontend_node_modules:
+
