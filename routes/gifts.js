@@ -45,6 +45,7 @@ router.get('/', async (req, res) => {
         _id: gift.id,
         price: giftPrice, // Asegurar que price sea número
         imageUrl: image_url || null, // Mapear image_url a imageUrl para el frontend
+        total_contributed: totalContributed, // Incluir total contribuido para el frontend
         contributors: [], // Se puede expandir si es necesario
         isContributed: is_contributed || false, // Usar el campo de la BD
         isFullyContributed: isFullyContributed // Calcular basado en total contribuido vs precio
@@ -99,8 +100,21 @@ router.post('/:id/contribute', auth, async (req, res) => {
     }
 
     const currentTotalContributed = parseFloat(gift.total_contributed || 0);
-    if (currentTotalContributed >= parseFloat(gift.price)) {
+    const giftPrice = parseFloat(gift.price);
+    
+    if (currentTotalContributed >= giftPrice) {
       return res.status(400).json({ message: 'Este regalo ya está completamente contribuido.' });
+    }
+
+    // Validar que el monto no exceda el precio del producto
+    if (amount > giftPrice) {
+      return res.status(400).json({ message: `El monto no puede exceder el precio del producto (S/ ${giftPrice.toFixed(2)}).` });
+    }
+
+    // Validar que el monto no exceda el disponible
+    const availableAmount = giftPrice - currentTotalContributed;
+    if (amount > availableAmount) {
+      return res.status(400).json({ message: `El monto máximo disponible es S/ ${availableAmount.toFixed(2)}.` });
     }
 
     // Agregar contribución usando el método del modelo
@@ -109,7 +123,7 @@ router.post('/:id/contribute', auth, async (req, res) => {
     // Obtener el regalo actualizado con el total contribuido correcto
     const finalGift = await Gift.findById(req.params.id);
     const newTotalContributed = parseFloat(finalGift.total_contributed || 0);
-    const giftPrice = parseFloat(finalGift.price);
+    // Reutilizar giftPrice ya que el precio no cambia
     const isFullyContributed = newTotalContributed >= giftPrice;
     
     res.json({

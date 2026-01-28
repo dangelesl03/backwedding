@@ -22,8 +22,7 @@ API REST para el sistema de gestión de regalos de boda. Permite a los invitados
 # Instalar dependencias
 npm install
 
-# Crear archivo .env con las variables de entorno
-# Ver ENV_SETUP.md para más detalles
+# Crear archivo .env con las variables de entorno necesarias
 ```
 
 ## ⚙️ Configuración
@@ -38,7 +37,11 @@ NODE_ENV=development
 FRONTEND_URL=http://localhost:3000
 ```
 
-Ver `ENV_SETUP.md` para configuración detallada.
+Variables de entorno necesarias:
+- `DATABASE_URL` o `POSTGRES_URL`: URL de conexión a PostgreSQL
+- `JWT_SECRET`: Secreto para firmar tokens JWT
+- `FRONTEND_URL`: URL del frontend para CORS
+- `PORT`: Puerto del servidor (opcional, default: 5000)
 
 ## 🚀 Ejecución
 
@@ -71,15 +74,12 @@ El servidor estará disponible en `http://localhost:5000`
 
 ## 🌐 Deployment en Vercel
 
-Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para instrucciones detalladas.
-
-### Resumen rápido:
-
 1. Conecta tu repositorio a Vercel
 2. Configura **Root Directory**: `backend`
 3. Agrega variables de entorno:
-   - `DATABASE_URL`
-   - `JWT_SECRET`
+   - `DATABASE_URL` o `POSTGRES_URL`: URL de conexión a PostgreSQL
+   - `JWT_SECRET`: Secreto para firmar tokens JWT
+   - `FRONTEND_URL`: URL del frontend desplegado
    - `NODE_ENV=production`
 4. Deploy
 
@@ -148,20 +148,18 @@ Authorization: Bearer <token>
 
 ## 📝 Variables de Entorno
 
-Ver `ENV_SETUP.md` para documentación completa de variables de entorno.
+Variables principales:
+- `DATABASE_URL` o `POSTGRES_URL`: URL de conexión a PostgreSQL (prioridad: POSTGRES_URL)
+- `JWT_SECRET`: Secreto para firmar tokens JWT
+- `FRONTEND_URL`: URL del frontend para configuración CORS
+- `PORT`: Puerto del servidor (opcional, default: 5000)
+- `NODE_ENV`: Entorno de ejecución (development/production)
 
 ## 🐛 Solución de Problemas
 
-- **Error de conexión a BD**: Verifica `DATABASE_URL` en `.env`
-- **Error 500 en login**: Ver `SOLUCION_LOGIN.md`
-- **Problemas de migración**: Ver `MIGRACION_COMPLETA.md`
-
-## 📚 Documentación Adicional
-
-- [DEPLOYMENT.md](./DEPLOYMENT.md) - Guía de deployment en Vercel
-- [ENV_SETUP.md](./ENV_SETUP.md) - Configuración de variables de entorno
-- [SOLUCION_LOGIN.md](./SOLUCION_LOGIN.md) - Solución de problemas de login
-- [MIGRACION_COMPLETA.md](./MIGRACION_COMPLETA.md) - Detalles de migración a PostgreSQL
+- **Error de conexión a BD**: Verifica `DATABASE_URL` o `POSTGRES_URL` en `.env`
+- **Error 500 en login**: Verifica que el usuario admin exista (ejecuta `node check-db.js`)
+- **Error de CORS**: Asegúrate de que `FRONTEND_URL` esté configurado correctamente
 
 ## 📝 Licencia
 
@@ -170,4 +168,5 @@ Este proyecto es privado y está destinado para uso personal.
 ## 👥 Autores
 
 Natalia & Daniel - Boda 28 de Marzo 2026
+
 

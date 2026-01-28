@@ -13,8 +13,11 @@ const { initDatabase } = require('./db/init');
 
 const app = express();
 
-// Middleware
-app.use(cors());
+// Middleware CORS - Permitir solicitudes del frontend
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'https://frontwedding-883s.vercel.app',
+  credentials: true
+}));
 app.use(express.json());
 
 // Middleware de logging para desarrollo

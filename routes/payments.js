@@ -26,12 +26,14 @@ router.post('/confirm', auth, async (req, res) => {
       return res.status(401).json({ message: 'Usuario no válido.' });
     }
 
-    // Marcar cada regalo como vendido/contribuido completamente
+    // Registrar las contribuciones pagadas (pueden ser parciales)
     const updatedGifts = [];
-    for (const giftId of giftIds) {
+    const { amounts } = req.body; // Montos pagados por cada regalo (opcional)
+    
+    for (let i = 0; i < giftIds.length; i++) {
       try {
         // Convertir giftId a número si es string
-        const id = typeof giftId === 'string' ? parseInt(giftId) : giftId;
+        const id = typeof giftIds[i] === 'string' ? parseInt(giftIds[i]) : giftIds[i];
         
         const gift = await Gift.findById(id);
         if (!gift) {
@@ -39,28 +41,57 @@ router.post('/confirm', auth, async (req, res) => {
           continue;
         }
 
-        // Registrar el pago completo
-        const totalContributed = parseFloat(gift.total_contributed || 0);
-        const price = parseFloat(gift.price);
-        const remaining = Math.max(0, price - totalContributed);
-        
-        if (remaining > 0) {
-          // Agregar contribución restante
-          await query(
-            'INSERT INTO gift_contributions (gift_id, user_id, amount) VALUES ($1, $2, $3)',
-            [id, userId, remaining]
-          );
+        // Si se proporciona un monto específico para este regalo, usarlo
+        // De lo contrario, calcular el monto restante (comportamiento anterior para compatibilidad)
+        let amountToContribute;
+        if (amounts && amounts[i] !== undefined) {
+          // Usar el monto específico proporcionado
+          amountToContribute = parseFloat(amounts[i]);
+        } else {
+          // Comportamiento anterior: completar el regalo
+          const totalContributed = parseFloat(gift.total_contributed || 0);
+          const price = parseFloat(gift.price);
+          amountToContribute = Math.max(0, price - totalContributed);
         }
         
-        // Marcar como completamente contribuido
-        await query(
-          'UPDATE gifts SET is_contributed = true WHERE id = $1',
-          [id]
-        );
+        // Validaciones
+        const totalContributed = parseFloat(gift.total_contributed || 0);
+        const price = parseFloat(gift.price);
         
-        updatedGifts.push(id);
+        // Validar que el monto no exceda el precio del producto
+        if (amountToContribute > price) {
+          console.warn(`Monto ${amountToContribute} excede el precio ${price} del regalo ${id}`);
+          amountToContribute = price; // Limitar al precio máximo
+        }
+        
+        // Validar que el monto no exceda el disponible
+        const availableAmount = price - totalContributed;
+        if (amountToContribute > availableAmount) {
+          console.warn(`Monto ${amountToContribute} excede el disponible ${availableAmount} del regalo ${id}`);
+          amountToContribute = Math.max(0, availableAmount); // Limitar al disponible, mínimo 0
+        }
+        
+        // Validar que el monto sea positivo y válido antes de procesar
+        if (amountToContribute > 0 && amountToContribute <= availableAmount && amountToContribute <= price) {
+          try {
+            // Agregar contribución usando el método del modelo (que maneja correctamente el estado)
+            await Gift.addContribution(id, userId, amountToContribute);
+            updatedGifts.push(id);
+          } catch (contributionError) {
+            console.error(`Error agregando contribución al regalo ${id}:`, contributionError);
+            console.error('Error details:', contributionError.message, contributionError.stack);
+            // Continuar con el siguiente regalo en lugar de fallar todo
+          }
+        } else {
+          const reason = amountToContribute <= 0 ? 'monto inválido (0 o negativo)' 
+            : amountToContribute > availableAmount ? 'excede el disponible' 
+            : amountToContribute > price ? 'excede el precio' 
+            : 'desconocido';
+          console.warn(`No se puede procesar regalo ${id}: ${reason}. Monto: ${amountToContribute}, Disponible: ${availableAmount}, Precio: ${price}`);
+          // No agregar a updatedGifts si el monto es 0 o inválido
+        }
       } catch (giftError) {
-        console.error(`Error procesando regalo ${giftId}:`, giftError);
+        console.error(`Error procesando regalo ${giftIds[i]}:`, giftError);
         // Continuar con los demás regalos
       }
     }
