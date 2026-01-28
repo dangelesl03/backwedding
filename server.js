@@ -14,9 +14,44 @@ const { initDatabase } = require('./db/init');
 const app = express();
 
 // Middleware CORS - Permitir solicitudes del frontend
+const allowedOrigins = [
+  'https://nataliaydaniel2026.vercel.app',
+  'https://frontwedding-883s.vercel.app',
+  process.env.FRONTEND_URL
+].filter(Boolean); // Eliminar valores undefined/null
+
+// Log de orígenes permitidos para debugging
+console.log('🌐 Orígenes CORS permitidos:', allowedOrigins);
+
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'https://frontwedding-883s.vercel.app',
-  credentials: true
+  origin: function (origin, callback) {
+    // Permitir requests sin origin (como mobile apps o curl requests)
+    if (!origin) {
+      console.log('⚠️ Request sin origin, permitiendo...');
+      return callback(null, true);
+    }
+    
+    // Log para debugging
+    console.log(`🔍 CORS check - Origin: ${origin}`);
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
+      console.log('✅ Origin permitido:', origin);
+      callback(null, true);
+    } else {
+      // En desarrollo, permitir localhost
+      if (process.env.NODE_ENV === 'development' && origin.includes('localhost')) {
+        console.log('✅ Origin localhost permitido en desarrollo:', origin);
+        callback(null, true);
+      } else {
+        console.log('❌ Origin NO permitido:', origin);
+        console.log('📋 Orígenes permitidos:', allowedOrigins);
+        callback(new Error('No permitido por CORS'));
+      }
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 app.use(express.json());
 
