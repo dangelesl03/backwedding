@@ -1,14 +1,24 @@
 const express = require('express');
-const Gift = require('../models/Gift');
 const { auth } = require('../middleware/auth');
+const User = require('../models/User');
 const { query } = require('../db');
 
 const router = express.Router();
 
-// Obtener reporte de contribuciones por regalo
-router.get('/contributions', auth, async (req, res) => {
+const checkAdmin = async (req, res, next) => {
   try {
-    // Primero obtener todos los regalos activos
+    const user = await User.findById(req.user.id);
+    if (!user || user.role !== 'admin') {
+      return res.status(403).json({ message: 'Solo los administradores pueden acceder a los reportes.' });
+    }
+    next();
+  } catch (error) {
+    res.status(500).json({ message: 'Error en el servidor.' });
+  }
+};
+
+router.get('/contributions', auth, checkAdmin, async (req, res) => {
+  try {
     const giftsResult = await query(`
       SELECT 
         g.id,
@@ -23,7 +33,6 @@ router.get('/contributions', auth, async (req, res) => {
       ORDER BY g.name
     `);
 
-    // Luego obtener todas las contribuciones con información de usuario
     const contributionsResult = await query(`
       SELECT 
         gc.gift_id,
@@ -36,7 +45,6 @@ router.get('/contributions', auth, async (req, res) => {
       ORDER BY gc.gift_id, gc.contributed_at DESC
     `);
 
-    // Agrupar contribuciones por regalo
     const contributionsMap = new Map();
     contributionsResult.rows.forEach(row => {
       const giftId = row.gift_id;
@@ -68,8 +76,7 @@ router.get('/contributions', auth, async (req, res) => {
   }
 });
 
-// Obtener reporte resumido (solo totales por regalo)
-router.get('/summary', auth, async (req, res) => {
+router.get('/summary', auth, checkAdmin, async (req, res) => {
   try {
     const result = await query(`
       SELECT 

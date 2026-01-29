@@ -24,6 +24,16 @@ CREATE TABLE IF NOT EXISTS events (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Tabla de categorías
+CREATE TABLE IF NOT EXISTS categories (
+    id SERIAL PRIMARY KEY,
+    name VARCHAR(100) UNIQUE NOT NULL,
+    description TEXT,
+    is_active BOOLEAN DEFAULT true,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Tabla de regalos
 CREATE TABLE IF NOT EXISTS gifts (
     id SERIAL PRIMARY KEY,
@@ -31,10 +41,11 @@ CREATE TABLE IF NOT EXISTS gifts (
     description TEXT,
     price DECIMAL(10, 2) NOT NULL CHECK (price >= 0),
     currency VARCHAR(10) DEFAULT 'PEN',
-    category VARCHAR(100) DEFAULT 'Otro' CHECK (category IN ('Luna de Miel', 'Arte y Deco', 'Otro')),
+    category VARCHAR(100) DEFAULT 'Otro',
+    category_id INTEGER REFERENCES categories(id) ON DELETE SET NULL,
     available INTEGER DEFAULT 1 CHECK (available >= 0),
     total INTEGER DEFAULT 1 CHECK (total >= 1),
-    image_url VARCHAR(500),
+    image_url TEXT,
     is_active BOOLEAN DEFAULT true,
     is_contributed BOOLEAN DEFAULT false,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -52,7 +63,9 @@ CREATE TABLE IF NOT EXISTS gift_contributions (
 
 -- Índices para mejorar rendimiento
 CREATE INDEX IF NOT EXISTS idx_gifts_category ON gifts(category);
+CREATE INDEX IF NOT EXISTS idx_gifts_category_id ON gifts(category_id);
 CREATE INDEX IF NOT EXISTS idx_gifts_is_active ON gifts(is_active);
+CREATE INDEX IF NOT EXISTS idx_categories_is_active ON categories(is_active);
 CREATE INDEX IF NOT EXISTS idx_gift_contributions_gift_id ON gift_contributions(gift_id);
 CREATE INDEX IF NOT EXISTS idx_gift_contributions_user_id ON gift_contributions(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
@@ -74,4 +87,7 @@ CREATE TRIGGER update_events_updated_at BEFORE UPDATE ON events
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 CREATE TRIGGER update_gifts_updated_at BEFORE UPDATE ON gifts
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+CREATE TRIGGER update_categories_updated_at BEFORE UPDATE ON categories
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

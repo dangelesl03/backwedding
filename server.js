@@ -8,6 +8,8 @@ const giftRoutes = require('./routes/gifts');
 const eventRoutes = require('./routes/events');
 const paymentRoutes = require('./routes/payments');
 const reportRoutes = require('./routes/reports');
+const categoryRoutes = require('./routes/categories');
+const importRoutes = require('./routes/import');
 const config = require('./config');
 const { initDatabase } = require('./db/init');
 
@@ -20,31 +22,18 @@ const allowedOrigins = [
   process.env.FRONTEND_URL
 ].filter(Boolean); // Eliminar valores undefined/null
 
-// Log de orígenes permitidos para debugging
-console.log('🌐 Orígenes CORS permitidos:', allowedOrigins);
-
 app.use(cors({
   origin: function (origin, callback) {
-    // Permitir requests sin origin (como mobile apps o curl requests)
     if (!origin) {
-      console.log('⚠️ Request sin origin, permitiendo...');
       return callback(null, true);
     }
     
-    // Log para debugging
-    console.log(`🔍 CORS check - Origin: ${origin}`);
-    
     if (allowedOrigins.indexOf(origin) !== -1) {
-      console.log('✅ Origin permitido:', origin);
       callback(null, true);
     } else {
-      // En desarrollo, permitir localhost
       if (process.env.NODE_ENV === 'development' && origin.includes('localhost')) {
-        console.log('✅ Origin localhost permitido en desarrollo:', origin);
         callback(null, true);
       } else {
-        console.log('❌ Origin NO permitido:', origin);
-        console.log('📋 Orígenes permitidos:', allowedOrigins);
         callback(new Error('No permitido por CORS'));
       }
     }
@@ -53,15 +42,8 @@ app.use(cors({
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
-app.use(express.json());
-
-// Middleware de logging para desarrollo
-if (process.env.NODE_ENV === 'development') {
-  app.use((req, res, next) => {
-    console.log(`${req.method} ${req.path}`);
-    next();
-  });
-}
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // Middleware de manejo de errores
 app.use((err, req, res, next) => {
@@ -78,6 +60,8 @@ app.use('/api/gifts', giftRoutes);
 app.use('/api/events', eventRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/reports', reportRoutes);
+app.use('/api/categories', categoryRoutes);
+app.use('/api/import', importRoutes);
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -87,34 +71,18 @@ app.get('/health', (req, res) => {
 // Exportar app para Vercel serverless
 module.exports = app;
 
-// Solo iniciar servidor si no estamos en Vercel (vercel dev o producción)
 if (process.env.VERCEL !== '1') {
-  // Inicializar base de datos y luego iniciar servidor
   const startServer = async () => {
     try {
-      console.log('🔌 Verificando conexión a la base de datos...');
-      
-      // Verificar conexión a la base de datos (sin inicializar schema cada vez)
       const { query } = require('./db');
-      
-      // Probar la conexión
       await query('SELECT NOW()');
-      console.log('✅ Base de datos PostgreSQL conectada correctamente');
 
       const PORT = config.PORT || 5000;
-
       app.listen(PORT, () => {
-        console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-        console.log(`📝 API disponible en http://localhost:${PORT}/api`);
-        console.log(`💳 Endpoint de pagos: http://localhost:${PORT}/api/payments/confirm`);
-        console.log(`🔐 Endpoint de login: http://localhost:${PORT}/api/auth/login`);
+        console.log(`Server running on port ${PORT}`);
       });
     } catch (error) {
-      console.error('❌ Error iniciando servidor:', error.message);
-      console.error('Stack trace:', error.stack);
-      if (error.code) {
-        console.error('Código de error:', error.code);
-      }
+      console.error('Error starting server:', error.message);
       process.exit(1);
     }
   };

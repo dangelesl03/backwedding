@@ -156,21 +156,154 @@ router.post('/', auth, adminAuth, async (req, res) => {
   }
 });
 
+// Crear gift cards dinámicamente (solo admin)
+router.post('/gift-cards', auth, adminAuth, async (req, res) => {
+  try {
+    const { amounts, quantities, themes } = req.body;
+    
+    // Validar datos
+    if (!amounts || !Array.isArray(amounts) || amounts.length === 0) {
+      return res.status(400).json({ message: 'Debe proporcionar un array de montos.' });
+    }
+    
+    if (!quantities || typeof quantities !== 'object') {
+      return res.status(400).json({ message: 'Debe proporcionar las cantidades por monto.' });
+    }
+    
+    if (!themes || !Array.isArray(themes) || themes.length === 0) {
+      return res.status(400).json({ message: 'Debe proporcionar un array de temas.' });
+    }
+    
+    const createdGiftCards = [];
+    const errors = [];
+    
+    // Generar gift cards dinámicamente
+    amounts.forEach(amount => {
+      const totalQuantity = quantities[amount] || 0;
+      if (totalQuantity <= 0) return;
+      
+      const cardsPerTheme = Math.floor(totalQuantity / themes.length);
+      const remainder = totalQuantity % themes.length;
+      
+      themes.forEach((theme, index) => {
+        const quantity = cardsPerTheme + (index < remainder ? 1 : 0);
+        
+        if (quantity > 0) {
+          const giftCardData = {
+            name: `Gift Card S/ ${amount} - ${theme.name} ${theme.emoji || ''}`,
+            description: `Gift card de ${amount} soles con temática ${theme.name}`,
+            price: amount,
+            currency: 'PEN',
+            category: 'Otro',
+            available: quantity,
+            total: quantity,
+            imageUrl: theme.imageUrl || null
+          };
+          
+          createdGiftCards.push(giftCardData);
+        }
+      });
+    });
+    
+    // Crear las gift cards en la base de datos
+    const results = [];
+    for (const giftCardData of createdGiftCards) {
+      try {
+        // Verificar si ya existe
+        const existing = await Gift.find({ category: 'Otro' });
+        const exists = existing.some(g => g.name === giftCardData.name);
+        
+        if (!exists) {
+          const gift = await Gift.create(giftCardData);
+          results.push({
+            ...gift,
+            _id: gift.id,
+            imageUrl: gift.image_url
+          });
+        } else {
+          errors.push(`Ya existe: ${giftCardData.name}`);
+        }
+      } catch (error) {
+        errors.push(`Error creando ${giftCardData.name}: ${error.message}`);
+      }
+    }
+    
+    res.status(201).json({
+      message: `Se crearon ${results.length} gift cards exitosamente.`,
+      created: results.length,
+      giftCards: results,
+      errors: errors.length > 0 ? errors : undefined
+    });
+  } catch (error) {
+    console.error('Error creando gift cards:', error);
+    res.status(500).json({ message: 'Error en el servidor.' });
+  }
+});
+
 // Actualizar regalo (solo admin)
 router.put('/:id', auth, adminAuth, async (req, res) => {
   try {
-    const gift = await Gift.findByIdAndUpdate(req.params.id, req.body);
-    if (!gift) {
+    // Validar tamaño del cuerpo de la solicitud (máximo 4MB para Vercel)
+    const contentLength = req.get('content-length');
+    if (contentLength && parseInt(contentLength) > 4 * 1024 * 1024) {
+      return res.status(413).json({ 
+        message: 'La imagen es demasiado grande. Por favor, comprime la imagen o usa una URL externa.',
+        maxSize: '4MB'
+      });
+    }
+    
+    // Validar tamaño de imageUrl si es Base64
+    if (req.body.imageUrl && req.body.imageUrl.startsWith('data:')) {
+      const base64Size = req.body.imageUrl.length;
+      const maxSize = 3 * 1024 * 1024; // 3MB
+      if (base64Size > maxSize) {
+        return res.status(413).json({ 
+          message: `La imagen Base64 es demasiado grande (${(base64Size / 1024 / 1024).toFixed(2)}MB). Por favor, comprime la imagen o usa una URL externa.`,
+          maxSize: '3MB',
+          currentSize: `${(base64Size / 1024 / 1024).toFixed(2)}MB`
+        });
+      }
+    }
+    
+    const updatedGift = await Gift.findByIdAndUpdate(req.params.id, req.body);
+    if (!updatedGift) {
       return res.status(404).json({ message: 'Regalo no encontrado.' });
     }
+    
+    // Obtener el regalo actualizado con total_contributed calculado
+    const gift = await Gift.findById(req.params.id);
+    if (!gift) {
+      return res.status(404).json({ message: 'Regalo no encontrado después de actualizar.' });
+    }
+    
+    const totalContributed = parseFloat(gift.total_contributed || 0);
+    const giftPrice = parseFloat(gift.price);
+    const isFullyContributed = totalContributed >= giftPrice;
+    
     res.json({
       ...gift,
       _id: gift.id,
-      imageUrl: gift.image_url
+      price: parseFloat(gift.price),
+      imageUrl: gift.image_url || null, // Asegurar que imageUrl refleje el cambio
+      isContributed: gift.is_contributed || false,
+      isFullyContributed: isFullyContributed,
+      total_contributed: totalContributed
     });
   } catch (error) {
     console.error('Error actualizando regalo:', error);
-    res.status(500).json({ message: 'Error en el servidor.' });
+    
+    // Manejar errores específicos de tamaño
+    if (error.message && error.message.includes('too large')) {
+      return res.status(413).json({ 
+        message: 'La solicitud es demasiado grande. Por favor, comprime la imagen o usa una URL externa.',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+    
+    res.status(500).json({ 
+      message: 'Error en el servidor.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 

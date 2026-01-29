@@ -37,6 +37,21 @@ class User {
     }
     return null;
   }
+
+  static async findAll() {
+    const result = await query(
+      'SELECT id, username, role, created_at FROM users ORDER BY created_at DESC'
+    );
+    return result.rows;
+  }
+
+  static async delete(id) {
+    const result = await query(
+      'DELETE FROM users WHERE id = $1 RETURNING id, username, role',
+      [id]
+    );
+    return result.rows[0] || null;
+  }
 }
 
 module.exports = User;
