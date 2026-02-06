@@ -20,5 +20,7 @@
       "maxDuration": 30,
       "memory": 1024
     }
-  }
+  },
+  "installCommand": "npm install",
+  "buildCommand": "echo 'No build step required'"
 }
