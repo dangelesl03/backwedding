@@ -26,18 +26,27 @@ if (!databaseUrl || databaseUrl === 'undefined' || databaseUrl === 'null') {
   // No hacer exit aquí - dejar que falle cuando se intente usar la conexión
 }
 
-// Solo crear el pool si tenemos una URL válida
-// Si no hay URL, el pool será null y fallará cuando se intente usar
+// Lazy initialization del pool - solo crear cuando se necesite
+// Esto evita problemas durante el build de Vercel
 let pool = null;
 
-if (databaseUrl && databaseUrl !== '' && databaseUrl !== 'undefined' && databaseUrl !== 'null') {
+const getPool = () => {
+  // Si ya existe el pool, retornarlo
+  if (pool) {
+    return pool;
+  }
+  
+  // Validar que tengamos una URL válida antes de crear el pool
+  if (!databaseUrl || databaseUrl === '' || databaseUrl === 'undefined' || databaseUrl === 'null') {
+    throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel Dashboard → Settings → Environment Variables');
+  }
+  
   // Configurar SSL basado en la URL de conexión (Neon siempre requiere SSL)
   const sslConfig = databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
     ? { rejectUnauthorized: false }
     : false;
 
   // Crear el pool con la URL de conexión como string explícito
-  // Asegurarse de que la URL sea un string primitivo, no un objeto
   pool = new Pool({
     connectionString: String(databaseUrl),
     ssl: sslConfig,
@@ -45,21 +54,8 @@ if (databaseUrl && databaseUrl !== '' && databaseUrl !== 'undefined' && database
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 2000,
   });
-} else {
-  // Crear un pool dummy que fallará con un mensaje claro cuando se use
-  pool = {
-    query: async () => {
-      throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel.');
-    },
-    connect: async () => {
-      throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel.');
-    },
-    on: () => {}
-  };
-}
-
-// Manejar errores de conexión (solo si el pool es válido)
-if (pool && typeof pool.on === 'function') {
+  
+  // Manejar errores de conexión
   pool.on('error', (err) => {
     console.error('Error inesperado en el cliente PostgreSQL:', err);
     // No hacer exit en Vercel - dejar que el error se maneje normalmente
@@ -67,18 +63,17 @@ if (pool && typeof pool.on === 'function') {
       process.exit(-1);
     }
   });
-}
+  
+  return pool;
+};
 
 // Función helper para queries
 const query = async (text, params) => {
-  // Validar que el pool esté configurado antes de usar
-  if (!pool || !databaseUrl || databaseUrl === '' || databaseUrl === 'undefined') {
-    throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel Dashboard → Settings → Environment Variables');
-  }
+  const activePool = getPool(); // Lazy initialization
   
   const start = Date.now();
   try {
-    const res = await pool.query(text, params);
+    const res = await activePool.query(text, params);
     const duration = Date.now() - start;
     if (process.env.NODE_ENV === 'development') {
       console.log('Query ejecutada', { text: text.substring(0, 100), duration, rows: res.rowCount });
@@ -97,12 +92,9 @@ const query = async (text, params) => {
 
 // Función helper para transacciones
 const transaction = async (callback) => {
-  // Validar que el pool esté configurado antes de usar
-  if (!pool || !databaseUrl || databaseUrl === '' || databaseUrl === 'undefined') {
-    throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel Dashboard → Settings → Environment Variables');
-  }
+  const activePool = getPool(); // Lazy initialization
   
-  const client = await pool.connect();
+  const client = await activePool.connect();
   try {
     await client.query('BEGIN');
     const result = await callback(client);
@@ -117,7 +109,15 @@ const transaction = async (callback) => {
 };
 
 module.exports = {
-  pool,
+  get pool() {
+    // Lazy getter para el pool - solo se crea cuando se accede
+    try {
+      return getPool();
+    } catch (error) {
+      // Retornar null si no está configurado en lugar de lanzar error
+      return null;
+    }
+  },
   query,
   transaction
 };
