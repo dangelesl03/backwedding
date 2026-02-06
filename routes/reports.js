@@ -38,6 +38,8 @@ router.get('/contributions', auth, checkAdmin, async (req, res) => {
         gc.gift_id,
         gc.amount,
         gc.contributed_at,
+        gc.receipt_file,
+        gc.note,
         u.id as user_id,
         u.username
       FROM gift_contributions gc
@@ -55,7 +57,9 @@ router.get('/contributions', auth, checkAdmin, async (req, res) => {
         userId: row.user_id.toString(),
         username: row.username,
         amount: parseFloat(row.amount),
-        contributedAt: row.contributed_at
+        contributedAt: row.contributed_at,
+        receiptFile: row.receipt_file,
+        note: row.note || ''
       });
     });
 

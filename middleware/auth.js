@@ -31,4 +31,20 @@ const adminAuth = (req, res, next) => {
   next();
 };
 
-module.exports = { auth, adminAuth };
+const optionalAuth = async (req, res, next) => {
+  try {
+    const token = req.header('Authorization')?.replace('Bearer ', '');
+    if (token) {
+      const decoded = jwt.verify(token, config.JWT_SECRET);
+      const user = await User.findById(decoded.userId);
+      if (user) {
+        req.user = user;
+      }
+    }
+  } catch (error) {
+    // Si hay error, continuar sin usuario (invitado)
+  }
+  next();
+};
+
+module.exports = { auth, adminAuth, optionalAuth };

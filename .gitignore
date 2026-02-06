@@ -33,6 +33,9 @@ coverage/
 *.tmp
 *.temp
 
+# Uploaded files
+uploads/
+
 # Scripts de Windows (opcional, descomenta si no quieres subirlos)
 # *.bat
 # *.ps1

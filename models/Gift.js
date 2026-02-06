@@ -111,16 +111,16 @@ class Gift {
     return result.rows[0] || null;
   }
 
-  static async addContribution(giftId, userId, amount) {
+  static async addContribution(giftId, userId, amount, receiptFile = null, note = null) {
     // Obtener el regalo actual para verificar el total contribuido antes de agregar
     const currentGift = await this.findById(giftId);
     const currentTotal = parseFloat(currentGift.total_contributed || 0);
     const giftPrice = parseFloat(currentGift.price);
     
-    // Insertar contribución
+    // Insertar contribución con campos opcionales de comprobante y nota
     await query(
-      'INSERT INTO gift_contributions (gift_id, user_id, amount) VALUES ($1, $2, $3)',
-      [giftId, userId, amount]
+      'INSERT INTO gift_contributions (gift_id, user_id, amount, receipt_file, note) VALUES ($1, $2, $3, $4, $5)',
+      [giftId, userId, amount, receiptFile, note]
     );
 
     // Calcular el nuevo total contribuido después de agregar la contribución
