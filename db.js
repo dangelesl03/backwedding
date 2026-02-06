@@ -5,50 +5,77 @@ const { Pool } = require('pg');
 const config = require('./config');
 
 // Validar que DATABASE_URL esté configurada
-if (!config.DATABASE_URL || config.DATABASE_URL === '' || config.DATABASE_URL === 'undefined') {
-  console.error('❌ ERROR: DATABASE_URL no está configurada en las variables de entorno');
-  console.error('   Verifica que el archivo .env tenga la variable DATABASE_URL o POSTGRES_URL');
-  console.error('   Variables disponibles:', {
-    POSTGRES_URL: process.env.POSTGRES_URL ? 'Configurada' : 'NO configurada',
-    DATABASE_URL: process.env.DATABASE_URL ? 'Configurada' : 'NO configurada',
-    POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL ? 'Configurada' : 'NO configurada'
-  });
-  process.exit(1);
+// NO hacer exit durante el build de Vercel - solo validar cuando se use
+let databaseUrl = '';
+if (config.DATABASE_URL && config.DATABASE_URL !== '' && config.DATABASE_URL !== 'undefined') {
+  databaseUrl = String(config.DATABASE_URL).trim();
 }
 
-// Asegurar que DATABASE_URL sea un string válido
-let databaseUrl = String(config.DATABASE_URL).trim();
-
-// Si la URL está vacía después de convertir a string, hay un problema
+// Si la URL está vacía, solo advertir (no hacer exit durante build)
 if (!databaseUrl || databaseUrl === 'undefined' || databaseUrl === 'null') {
-  console.error('❌ ERROR: DATABASE_URL no es válida');
-  console.error('   Valor recibido:', config.DATABASE_URL);
-  process.exit(1);
+  // En Vercel durante el build, las variables pueden no estar disponibles aún
+  // Solo advertir, no hacer exit
+  if (process.env.VERCEL !== '1' && process.env.NODE_ENV !== 'production') {
+    console.warn('⚠️  ADVERTENCIA: DATABASE_URL no está configurada');
+    console.warn('   Variables disponibles:', {
+      POSTGRES_URL: process.env.POSTGRES_URL ? 'Configurada' : 'NO configurada',
+      DATABASE_URL: process.env.DATABASE_URL ? 'Configurada' : 'NO configurada',
+      POSTGRES_PRISMA_URL: process.env.POSTGRES_PRISMA_URL ? 'Configurada' : 'NO configurada'
+    });
+  }
+  // No hacer exit aquí - dejar que falle cuando se intente usar la conexión
 }
 
-// Configurar SSL basado en la URL de conexión (Neon siempre requiere SSL)
-const sslConfig = databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
-  ? { rejectUnauthorized: false }
-  : false;
+// Solo crear el pool si tenemos una URL válida
+// Si no hay URL, el pool será null y fallará cuando se intente usar
+let pool = null;
 
-// Crear el pool con la URL de conexión como string explícito
-// Asegurarse de que la URL sea un string primitivo, no un objeto
-const pool = new Pool({
-  connectionString: String(databaseUrl),
-  ssl: sslConfig,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+if (databaseUrl && databaseUrl !== '' && databaseUrl !== 'undefined' && databaseUrl !== 'null') {
+  // Configurar SSL basado en la URL de conexión (Neon siempre requiere SSL)
+  const sslConfig = databaseUrl.includes('neon.tech') || databaseUrl.includes('sslmode=require')
+    ? { rejectUnauthorized: false }
+    : false;
 
-// Manejar errores de conexión
-pool.on('error', (err) => {
-  console.error('Error inesperado en el cliente PostgreSQL:', err);
-  process.exit(-1);
-});
+  // Crear el pool con la URL de conexión como string explícito
+  // Asegurarse de que la URL sea un string primitivo, no un objeto
+  pool = new Pool({
+    connectionString: String(databaseUrl),
+    ssl: sslConfig,
+    max: 20,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 2000,
+  });
+} else {
+  // Crear un pool dummy que fallará con un mensaje claro cuando se use
+  pool = {
+    query: async () => {
+      throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel.');
+    },
+    connect: async () => {
+      throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel.');
+    },
+    on: () => {}
+  };
+}
+
+// Manejar errores de conexión (solo si el pool es válido)
+if (pool && typeof pool.on === 'function') {
+  pool.on('error', (err) => {
+    console.error('Error inesperado en el cliente PostgreSQL:', err);
+    // No hacer exit en Vercel - dejar que el error se maneje normalmente
+    if (process.env.VERCEL !== '1') {
+      process.exit(-1);
+    }
+  });
+}
 
 // Función helper para queries
 const query = async (text, params) => {
+  // Validar que el pool esté configurado antes de usar
+  if (!pool || !databaseUrl || databaseUrl === '' || databaseUrl === 'undefined') {
+    throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel Dashboard → Settings → Environment Variables');
+  }
+  
   const start = Date.now();
   try {
     const res = await pool.query(text, params);
@@ -70,6 +97,11 @@ const query = async (text, params) => {
 
 // Función helper para transacciones
 const transaction = async (callback) => {
+  // Validar que el pool esté configurado antes de usar
+  if (!pool || !databaseUrl || databaseUrl === '' || databaseUrl === 'undefined') {
+    throw new Error('DATABASE_URL no está configurada. Verifica las variables de entorno en Vercel Dashboard → Settings → Environment Variables');
+  }
+  
   const client = await pool.connect();
   try {
     await client.query('BEGIN');

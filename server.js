@@ -11,7 +11,6 @@ const reportRoutes = require('./routes/reports');
 const categoryRoutes = require('./routes/categories');
 const importRoutes = require('./routes/import');
 const config = require('./config');
-const { initDatabase } = require('./db/init');
 
 const app = express();
 
