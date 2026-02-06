@@ -106,6 +106,16 @@ router.post('/:id/contribute', auth, async (req, res) => {
       return res.status(400).json({ message: 'Este regalo ya está completamente contribuido.' });
     }
 
+    // Validar que solo regalos de más de 1000 soles permitan contribución parcial
+    if (giftPrice <= 1000) {
+      return res.status(400).json({ message: 'La contribución parcial solo está disponible para regalos de más de S/ 1000.00.' });
+    }
+
+    // Validar mínimo de 500 soles para contribuciones parciales
+    if (amount < 500) {
+      return res.status(400).json({ message: 'El monto mínimo para contribuir parcialmente es S/ 500.00.' });
+    }
+
     // Validar que el monto no exceda el precio del producto
     if (amount > giftPrice) {
       return res.status(400).json({ message: `El monto no puede exceder el precio del producto (S/ ${giftPrice.toFixed(2)}).` });
@@ -144,6 +154,12 @@ router.post('/:id/contribute', auth, async (req, res) => {
 // Crear regalo (solo admin)
 router.post('/', auth, adminAuth, async (req, res) => {
   try {
+    // Validar precio mínimo de 500 soles
+    const price = parseFloat(req.body.price);
+    if (!price || price < 500) {
+      return res.status(400).json({ message: 'El precio mínimo es S/ 500.00.' });
+    }
+    
     const gift = await Gift.create(req.body);
     res.status(201).json({
       ...gift,
@@ -243,6 +259,14 @@ router.post('/gift-cards', auth, adminAuth, async (req, res) => {
 // Actualizar regalo (solo admin)
 router.put('/:id', auth, adminAuth, async (req, res) => {
   try {
+    // Validar precio mínimo de 500 soles si se está actualizando el precio
+    if (req.body.price !== undefined) {
+      const price = parseFloat(req.body.price);
+      if (!price || price < 500) {
+        return res.status(400).json({ message: 'El precio mínimo es S/ 500.00.' });
+      }
+    }
+    
     // Validar tamaño del cuerpo de la solicitud (máximo 4MB para Vercel)
     const contentLength = req.get('content-length');
     if (contentLength && parseInt(contentLength) > 4 * 1024 * 1024) {

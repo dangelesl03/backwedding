@@ -93,6 +93,20 @@ router.post('/confirm', optionalAuth, async (req, res) => {
         const totalContributed = parseFloat(gift.total_contributed || 0);
         const price = parseFloat(gift.price);
         
+        // Validar que solo regalos de más de 1000 soles permitan contribución parcial
+        if (price <= 1000 && amountToContribute < price) {
+          console.warn(`Regalo ${id} con precio ${price} no permite contribución parcial (solo regalos > 1000)`);
+          amountToContribute = price; // Forzar contribución completa
+        }
+        
+        // Validar mínimo de 500 soles para contribuciones parciales (solo si es parcial)
+        if (price > 1000 && amountToContribute < price && amountToContribute < 500) {
+          console.warn(`Monto ${amountToContribute} es menor al mínimo de 500 para contribución parcial del regalo ${id}`);
+          return res.status(400).json({ 
+            message: `El monto mínimo para contribuir parcialmente es S/ 500.00. El regalo "${gift.name}" requiere un mínimo de S/ 500.00.` 
+          });
+        }
+        
         // Validar que el monto no exceda el precio del producto
         if (amountToContribute > price) {
           console.warn(`Monto ${amountToContribute} excede el precio ${price} del regalo ${id}`);

@@ -288,17 +288,21 @@ router.post('/gifts', auth, adminAuth, async (req, res) => {
 
     for (const giftData of gifts) {
       try {
-        // Validar datos mínimos (precio puede ser 0 para "aporte libre")
+        // Validar datos mínimos
         if (!giftData.name) {
           results.skipped++;
           results.errors.push(`Regalo sin nombre: ${JSON.stringify(giftData)}`);
           continue;
         }
         
-        // Si no hay precio, usar un valor por defecto
-        if (!giftData.price && giftData.price !== 0) {
-          giftData.price = 100; // Precio por defecto para "aporte libre"
+        // Validar y ajustar precio (mínimo 500)
+        let price = parseFloat(giftData.price) || 0;
+        if (price <= 0 || price < 500) {
+          price = 500; // Precio mínimo
         }
+        // Redondear al múltiplo de 500 más cercano
+        price = Math.round(price / 500) * 500;
+        giftData.price = price;
 
         // Preparar datos para crear
         const giftToCreate = {
