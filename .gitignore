@@ -36,6 +36,9 @@ coverage/
 # Uploaded files
 uploads/
 
+# Backups
+backups/
+
 # Scripts de Windows (opcional, descomenta si no quieres subirlos)
 # *.bat
 # *.ps1

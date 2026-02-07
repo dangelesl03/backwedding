@@ -10,6 +10,8 @@
  */
 
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const { query } = require('./db');
 const Gift = require('./models/Gift');
 
@@ -74,6 +76,38 @@ async function updatePricesToMultiples() {
       console.log(`   • ${update.name}`);
       console.log(`     S/ ${update.oldPrice.toFixed(2)} → S/ ${update.newPrice.toFixed(2)}\n`);
     });
+
+    // Crear backup de los precios antes de actualizar
+    const backupDir = path.join(__dirname, 'backups');
+    if (!fs.existsSync(backupDir)) {
+      fs.mkdirSync(backupDir, { recursive: true });
+    }
+
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').split('T')[0] + '_' + 
+                     new Date().toTimeString().split(' ')[0].replace(/:/g, '-');
+    const backupFileName = `price-backup-${timestamp}.json`;
+    const backupPath = path.join(backupDir, backupFileName);
+
+    const backupData = {
+      timestamp: new Date().toISOString(),
+      totalGifts: gifts.length,
+      updatedGifts: updates.length,
+      unchangedGifts: unchangedCount,
+      changes: updates.map(update => ({
+        id: update.id,
+        name: update.name,
+        oldPrice: update.oldPrice,
+        newPrice: update.newPrice
+      })),
+      allGifts: gifts.map(gift => ({
+        id: gift.id,
+        name: gift.name,
+        price: parseFloat(gift.price)
+      }))
+    };
+
+    fs.writeFileSync(backupPath, JSON.stringify(backupData, null, 2), 'utf8');
+    console.log(`💾 Backup guardado en: ${backupPath}\n`);
 
     // Confirmar antes de actualizar
     console.log('⚠️  ¿Deseas continuar con la actualización? (Ctrl+C para cancelar)');
