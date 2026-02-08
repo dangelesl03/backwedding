@@ -154,10 +154,10 @@ router.post('/:id/contribute', auth, async (req, res) => {
 // Crear regalo (solo admin)
 router.post('/', auth, adminAuth, async (req, res) => {
   try {
-    // Validar precio mínimo de 500 soles
+    // Validar que el precio sea válido
     const price = parseFloat(req.body.price);
-    if (!price || price < 500) {
-      return res.status(400).json({ message: 'El precio mínimo es S/ 500.00.' });
+    if (!price || price <= 0) {
+      return res.status(400).json({ message: 'El precio debe ser mayor a 0.' });
     }
     
     const gift = await Gift.create(req.body);
@@ -259,14 +259,6 @@ router.post('/gift-cards', auth, adminAuth, async (req, res) => {
 // Actualizar regalo (solo admin)
 router.put('/:id', auth, adminAuth, async (req, res) => {
   try {
-    // Validar precio mínimo de 500 soles si se está actualizando el precio
-    if (req.body.price !== undefined) {
-      const price = parseFloat(req.body.price);
-      if (!price || price < 500) {
-        return res.status(400).json({ message: 'El precio mínimo es S/ 500.00.' });
-      }
-    }
-    
     // Validar tamaño del cuerpo de la solicitud (máximo 4MB para Vercel)
     const contentLength = req.get('content-length');
     if (contentLength && parseInt(contentLength) > 4 * 1024 * 1024) {

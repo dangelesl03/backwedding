@@ -91,17 +91,50 @@ async function updateCategoriesAndPrices() {
     const tituloIndex = headers.indexOf('titulo');
     const precioIndex = headers.indexOf('precio');
     const categoriaIndex = headers.indexOf('categoria');
+    const tipoRegaloIndex = headers.indexOf('tipo_regalo');
+    const ticketsDisponiblesIndex = headers.indexOf('tickets_disponibles');
 
     if (numeroIndex === -1 || tituloIndex === -1 || precioIndex === -1 || categoriaIndex === -1) {
       console.error('❌ El CSV debe tener las columnas: numero, titulo, precio, categoria');
       process.exit(1);
     }
 
-    // 2. Obtener todos los regalos actuales de la BD
+    // Las columnas tipo_regalo y tickets_disponibles son opcionales
+    if (tipoRegaloIndex === -1) {
+      console.log('⚠️  No se encontró la columna "tipo_regalo" en el CSV. Se inferirá del precio.');
+    }
+    if (ticketsDisponiblesIndex === -1) {
+      console.log('⚠️  No se encontró la columna "tickets_disponibles" en el CSV.');
+    }
+
+    // 2. Verificar que la columna gift_type existe, si no, ejecutar migración
+    console.log('🔍 Verificando columna gift_type...');
+    try {
+      const checkColumn = await query(`
+        SELECT column_name 
+        FROM information_schema.columns 
+        WHERE table_name = 'gifts' 
+        AND column_name = 'gift_type'
+      `);
+      
+      if (checkColumn.rows.length === 0) {
+        console.log('📝 La columna gift_type no existe. Ejecutando migración...');
+        const { migrate } = require('./db/migrate-add-gift-type');
+        await migrate();
+        console.log('✅ Migración completada\n');
+      } else {
+        console.log('✅ La columna gift_type ya existe\n');
+      }
+    } catch (error) {
+      console.error('⚠️  Error al verificar columna gift_type:', error.message);
+      console.log('   Continuando sin verificar...\n');
+    }
+
+    // 3. Obtener todos los regalos actuales de la BD
     console.log('📦 Obteniendo regalos actuales de la base de datos...');
     let allGifts = [];
     try {
-      const allGiftsResult = await query('SELECT id, name, price, category, category_id FROM gifts ORDER BY id');
+      const allGiftsResult = await query('SELECT id, name, price, category, category_id, gift_type, available, total FROM gifts ORDER BY id');
       allGifts = allGiftsResult.rows;
       console.log(`   Se encontraron ${allGifts.length} regalos en la BD\n`);
     } catch (error) {
@@ -109,7 +142,7 @@ async function updateCategoriesAndPrices() {
       throw error;
     }
 
-    // 3. Procesar el CSV
+    // 4. Procesar el CSV
     console.log('📝 Procesando datos del CSV...');
     const csvGifts = [];
     const categoriesSet = new Set();
@@ -127,8 +160,43 @@ async function updateCategoriesAndPrices() {
       const titulo = columns[tituloIndex];
       const precioStr = columns[precioIndex];
       const categoria = columns[categoriaIndex];
+      const tipoRegalo = tipoRegaloIndex !== -1 ? columns[tipoRegaloIndex] : null;
+      const ticketsDisponiblesStr = ticketsDisponiblesIndex !== -1 ? columns[ticketsDisponiblesIndex] : null;
 
       const precio = extractPrice(precioStr);
+      
+      // Inferir tipo de regalo si no está en el CSV
+      let giftType = null;
+      if (tipoRegalo && tipoRegalo.trim()) {
+        const tipo = tipoRegalo.trim();
+        if (['Ticket', 'Aporte libre', 'Pago total'].includes(tipo)) {
+          giftType = tipo;
+        } else {
+          console.log(`⚠️  Tipo de regalo inválido "${tipo}" para "${titulo}". Se inferirá del precio.`);
+        }
+      }
+      
+      // Si no se especificó tipo, inferirlo del precio
+      if (!giftType) {
+        if (precio === null || precio === 0) {
+          giftType = 'Aporte libre';
+        } else {
+          giftType = 'Pago total';
+        }
+      }
+
+      // Procesar tickets disponibles
+      let ticketsDisponibles = null;
+      if (ticketsDisponiblesStr && ticketsDisponiblesStr.trim()) {
+        const tickets = parseInt(ticketsDisponiblesStr.trim());
+        if (!isNaN(tickets) && tickets >= 0) {
+          ticketsDisponibles = tickets;
+          // Si hay tickets disponibles > 0, el tipo debe ser Ticket
+          if (tickets > 0 && giftType !== 'Aporte libre') {
+            giftType = 'Ticket';
+          }
+        }
+      }
 
       if (categoria && categoria.trim()) {
         categoriesSet.add(categoria.trim());
@@ -138,7 +206,9 @@ async function updateCategoriesAndPrices() {
         numero: numero,
         titulo: titulo.trim(),
         precio: precio,
-        categoria: categoria ? categoria.trim() : null
+        categoria: categoria ? categoria.trim() : null,
+        tipoRegalo: giftType,
+        ticketsDisponibles: ticketsDisponibles
       });
     }
 
@@ -232,6 +302,7 @@ async function updateCategoriesAndPrices() {
     console.log('📊 Preparando actualizaciones (usando LIKE para matching flexible)...');
     const priceUpdates = [];
     const categoryUpdates = [];
+    const giftTypeUpdates = []; // Actualizaciones de tipo de regalo
     const priceDifferences = [];
     const skippedHighPrice = [];
     const notFoundGifts = []; // Regalos del CSV que no encontraron coincidencia
@@ -346,6 +417,51 @@ async function updateCategoriesAndPrices() {
           }
         }
 
+        // Actualizar tipo de regalo y tickets disponibles
+        if (csvGift.tipoRegalo) {
+          const currentGiftType = matchingGift.gift_type || 'Pago total';
+          const currentAvailable = matchingGift.available || 1;
+          const currentTotal = matchingGift.total || 1;
+          
+          let needsUpdate = false;
+          let newAvailable = currentAvailable;
+          let newTotal = currentTotal;
+          
+          // Si el tipo cambió o si hay tickets disponibles especificados
+          if (currentGiftType !== csvGift.tipoRegalo) {
+            needsUpdate = true;
+          }
+          
+          // Si es Ticket y se especificaron tickets disponibles
+          if (csvGift.tipoRegalo === 'Ticket' && csvGift.ticketsDisponibles !== null) {
+            newAvailable = csvGift.ticketsDisponibles;
+            newTotal = csvGift.ticketsDisponibles; // Por ahora, total = disponible
+            if (currentAvailable !== newAvailable || currentTotal !== newTotal) {
+              needsUpdate = true;
+            }
+          } else if (csvGift.tipoRegalo === 'Ticket' && csvGift.ticketsDisponibles === null) {
+            // Si es Ticket pero no se especificaron tickets, mantener los actuales o usar 1
+            if (currentAvailable === 1 && currentTotal === 1 && currentGiftType !== 'Ticket') {
+              newAvailable = 1;
+              newTotal = 1;
+              needsUpdate = true;
+            }
+          }
+          
+          if (needsUpdate) {
+            giftTypeUpdates.push({
+              giftId: matchingGift.id,
+              giftName: matchingGift.name,
+              oldGiftType: currentGiftType,
+              newGiftType: csvGift.tipoRegalo,
+              oldAvailable: currentAvailable,
+              newAvailable: newAvailable,
+              oldTotal: currentTotal,
+              newTotal: newTotal
+            });
+          }
+        }
+
         // Actualizar precio solo si < 1000
         if (csvPrice !== null) {
           if (csvPrice < 1000) {
@@ -390,6 +506,7 @@ async function updateCategoriesAndPrices() {
 
     console.log(`   - Precios a actualizar (< 1000): ${priceUpdates.length}`);
     console.log(`   - Categorías a actualizar: ${categoryUpdates.length}`);
+    console.log(`   - Tipos de regalo a actualizar: ${giftTypeUpdates.length}`);
     console.log(`   - Precios >= 1000 (no actualizados): ${skippedHighPrice.length}`);
     console.log(`   - Regalos sin coincidencia en CSV: ${notFoundGifts.length}`);
     
@@ -483,7 +600,37 @@ async function updateCategoriesAndPrices() {
     }
     console.log(`✅ Se actualizaron ${updatedCategories} categorías\n`);
 
-    // 11.5. Verificar que todos los regalos tengan categoría actualizada
+    // 11.5. Actualizar tipos de regalo y tickets disponibles
+    if (giftTypeUpdates.length > 0) {
+      console.log('🎫 Actualizando tipos de regalo y tickets disponibles...');
+      let updatedGiftTypes = 0;
+      const giftTypeBatchSize = 10;
+      for (let i = 0; i < giftTypeUpdates.length; i += giftTypeBatchSize) {
+        const batch = giftTypeUpdates.slice(i, i + giftTypeBatchSize);
+        for (const update of batch) {
+          try {
+            await Gift.findByIdAndUpdate(update.giftId, {
+              giftType: update.newGiftType,
+              available: update.newAvailable,
+              total: update.newTotal
+            });
+            updatedGiftTypes++;
+            if (updatedGiftTypes % 10 === 0) {
+              console.log(`   Progreso: ${updatedGiftTypes}/${giftTypeUpdates.length}...`);
+            }
+          } catch (error) {
+            console.error(`   ❌ Error actualizando tipo de ${update.giftName}:`, error.message);
+          }
+        }
+        // Pequeña pausa entre lotes
+        if (i + giftTypeBatchSize < giftTypeUpdates.length) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+      console.log(`✅ Se actualizaron ${updatedGiftTypes} tipos de regalo\n`);
+    }
+
+    // 11.6. Verificar que todos los regalos tengan categoría actualizada
     console.log('🔍 Verificando que todos los regalos tengan categoría...');
     const allGiftsAfterUpdate = await query('SELECT id, name, category, category_id FROM gifts WHERE is_active = true');
     const giftsWithoutCategory = [];
@@ -593,6 +740,22 @@ async function updateCategoriesAndPrices() {
       mdContent += `\n`;
     }
 
+    // Tipos de regalo actualizados
+    if (giftTypeUpdates.length > 0) {
+      mdContent += `## Tipos de Regalo Actualizados\n\n`;
+      mdContent += `**Total:** ${giftTypeUpdates.length}\n\n`;
+      mdContent += `| ID | Regalo | Tipo Anterior | Tipo Nuevo | Tickets Disponibles |\n`;
+      mdContent += `|----|--------|---------------|------------|---------------------|\n`;
+      
+      giftTypeUpdates.forEach(item => {
+        const ticketsInfo = item.newGiftType === 'Ticket' 
+          ? `${item.newAvailable} disponible(s)` 
+          : '-';
+        mdContent += `| ${item.giftId} | ${item.giftName} | ${item.oldGiftType} | ${item.newGiftType} | ${ticketsInfo} |\n`;
+      });
+      mdContent += `\n`;
+    }
+
     // Resumen de categorías
     mdContent += `## Categorías Creadas\n\n`;
     categoriesArray.forEach(catName => {
@@ -605,6 +768,7 @@ async function updateCategoriesAndPrices() {
     mdContent += `- ✅ Precios actualizados (< 1000): ${updatedPrices}\n`;
     mdContent += `- ⚠️  Precios NO actualizados (>= 1000): ${skippedHighPrice.length}\n`;
     mdContent += `- 🏷️  Categorías actualizadas: ${updatedCategories}\n`;
+    mdContent += `- 🎫 Tipos de regalo actualizados: ${giftTypeUpdates.length}\n`;
     mdContent += `- 📦 Categorías creadas: ${categoriesArray.length}\n`;
     mdContent += `- ❌ Regalos sin coincidencia: ${notFoundGifts.length}\n`;
 
@@ -615,6 +779,7 @@ async function updateCategoriesAndPrices() {
     console.log(`   - Precios actualizados (< 1000): ${updatedPrices}`);
     console.log(`   - Precios NO actualizados (>= 1000): ${skippedHighPrice.length}`);
     console.log(`   - Categorías actualizadas: ${updatedCategories}`);
+    console.log(`   - Tipos de regalo actualizados: ${giftTypeUpdates.length}`);
     console.log(`   - Categorías creadas: ${categoriesArray.length}`);
     console.log(`   - Regalos sin coincidencia: ${notFoundGifts.length}\n`);
 
