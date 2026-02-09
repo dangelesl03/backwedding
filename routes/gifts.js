@@ -107,7 +107,8 @@ router.post('/:id/contribute', auth, async (req, res) => {
     }
 
     // Validar que solo regalos de más de 1000 soles permitan contribución parcial
-    if (giftPrice <= 1000) {
+    // Excepción: Batidora no permite contribución parcial aunque cueste más de 1000
+    if (giftPrice <= 1000 || gift.name.toLowerCase().includes('batidora')) {
       return res.status(400).json({ message: 'La contribución parcial solo está disponible para regalos de más de S/ 1000.00.' });
     }
 
